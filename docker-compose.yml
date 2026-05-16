@@ -1,0 +1,12 @@
+services:
+  finance-app:
+    build: .
+    container_name: agalgala-finance-standalone
+    ports:
+      - "8080:8080"
+    volumes:
+      - finance_data:/app/data
+    restart: always
+
+volumes:
+  finance_data:
