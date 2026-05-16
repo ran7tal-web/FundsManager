@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Plus, Trash2, Moon, Sun, Calendar, TrendingUp, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, ChevronDown } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
 interface Expense {
@@ -17,39 +17,12 @@ type ViewMode = 'today' | 'week' | 'month' | 'quarter' | 'year';
 export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('today');
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('darkMode');
-      const isDark = saved ? JSON.parse(saved) : true;
-      // Apply immediately on load
-      if (isDark) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-      return isDark;
-    }
-    return true;
-  });
   const [socket, setSocket] = useState<Socket | null>(null);
   const today = new Date().toISOString().split('T')[0];
   const [newExpense, setNewExpense] = useState({ date: today, description: '', amount: '', category: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    console.log('Dark mode changed to:', darkMode);
-    localStorage.setItem('darkMode', JSON.stringify(darkMode));
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      console.log('Added dark class');
-    } else {
-      document.documentElement.classList.remove('dark');
-      console.log('Removed dark class');
-    }
-    console.log('HTML classes:', document.documentElement.className);
-  }, [darkMode]);
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -207,8 +180,8 @@ export default function App() {
   const uniqueCategories = Array.from(new Set(expenses.map(e => e.category).filter(Boolean)));
 
   return (
-    <div dir="rtl" className={darkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+    <div dir="rtl">
+      <div className="min-h-screen bg-white text-gray-900">
         <Toaster position="top-right" richColors />
         
         <div className="container mx-auto p-4 max-w-7xl">
@@ -217,18 +190,6 @@ export default function App() {
             <div className="flex items-center gap-4">
               <TrendingUp className="w-8 h-8 text-blue-500" />
               <h1 className="text-3xl font-bold">ניהול כספים</h1>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  console.log('Toggle clicked, current darkMode:', darkMode);
-                  setDarkMode(!darkMode);
-                }}
-                className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              >
-                {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-              </button>
             </div>
           </div>
 
