@@ -18,8 +18,8 @@ RUN npm install --omit=dev
 # Copy built files
 COPY --from=builder /app/dist ./dist
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directory with proper permissions
+RUN mkdir -p /app/data && chmod 777 /app/data
 
 EXPOSE 8080
 CMD ["node", "dist/server.js"]

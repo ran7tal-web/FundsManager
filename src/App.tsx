@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Plus, Trash2, Moon, Sun, Calendar, TrendingUp } from 'lucide-react';
+import { Plus, Trash2, Moon, Sun, Calendar, TrendingUp, ChevronDown } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
 interface Expense {
@@ -16,11 +16,50 @@ type ViewMode = 'today' | 'week' | 'month' | 'quarter' | 'year';
 
 export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>('week');
-  const [darkMode, setDarkMode] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('today');
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('darkMode');
+      const isDark = saved ? JSON.parse(saved) : true;
+      // Apply immediately on load
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      return isDark;
+    }
+    return true;
+  });
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [newExpense, setNewExpense] = useState({ date: '', description: '', amount: '', category: '' });
+  const today = new Date().toISOString().split('T')[0];
+  const [newExpense, setNewExpense] = useState({ date: today, description: '', amount: '', category: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    console.log('Dark mode changed to:', darkMode);
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      console.log('Added dark class');
+    } else {
+      document.documentElement.classList.remove('dark');
+      console.log('Removed dark class');
+    }
+    console.log('HTML classes:', document.documentElement.className);
+  }, [darkMode]);
+  
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryRef.current && !categoryRef.current.contains(event.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const s = io({ path: '/finance/socket.io' });
@@ -73,33 +112,65 @@ export default function App() {
     return { start: start.toISOString().split('T')[0], end: now.toISOString().split('T')[0] };
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && newExpense.date && newExpense.description && newExpense.amount) {
+      e.preventDefault();
+      addExpense();
+    }
+  };
+
   const fetchExpenses = async () => {
-    const { start, end } = getDateRange();
-    const res = await fetch(`/api/expenses?start=${start}&end=${end}`);
-    const data = await res.json();
-    setExpenses(data);
+    try {
+      const { start, end } = getDateRange();
+      console.log('Fetching expenses:', { start, end });
+      const res = await fetch(`./api/expenses?start=${start}&end=${end}`);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log('Fetched expenses:', data);
+      setExpenses(data);
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+      toast.error('שגיאה בטעינת הוצאות');
+    }
   };
 
   const addExpense = async () => {
-    if (!newExpense.date || !newExpense.description || !newExpense.amount) return;
+    if (!newExpense.date || !newExpense.description || !newExpense.amount) {
+      toast.error('יש למלא את כל השדות');
+      return;
+    }
     
-    const res = await fetch('/api/expenses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newExpense, amount: parseFloat(newExpense.amount), user: 'user1' }),
-    });
-    
-    const expense = await res.json();
-    setExpenses(prev => [expense, ...prev]);
-    setNewExpense({ date: '', description: '', amount: '', category: '' });
-    toast.success('הוצאה נוספה');
+    try {
+      const res = await fetch('./api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newExpense, amount: parseFloat(newExpense.amount), user: 'user1' }),
+      });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
+      const expense = await res.json();
+      setExpenses(prev => [expense, ...prev]);
+      const today = new Date().toISOString().split('T')[0];
+      setNewExpense({ date: today, description: '', amount: '', category: '' });
+      toast.success('הוצאה נוספה');
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      toast.error('שגיאה בהוספת הוצאה');
+    }
   };
 
   const updateExpense = async (id: number, updates: Partial<Expense>) => {
     const expense = expenses.find(e => e.id === id);
     if (!expense) return;
     
-    await fetch(`/api/expenses/${id}`, {
+    await fetch(`./api/expenses/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...expense, ...updates }),
@@ -110,17 +181,35 @@ export default function App() {
   };
 
   const deleteExpense = async (id: number) => {
-    await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    toast.success('הוצאה נמחקה');
+    try {
+      await fetch(`./api/expenses/${id}`, { method: 'DELETE' });
+      setExpenses(prev => prev.filter(e => e.id !== id));
+      toast.success('הוצאה נמחקה');
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      toast.error('שגיאה במחיקת הוצאה');
+    }
   };
 
   const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+  
+  // Group by category for visualization
+  const categoryTotals = expenses.reduce((acc, e) => {
+    acc[e.category || 'אחר'] = (acc[e.category || 'אחר'] || 0) + e.amount;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const categories = Object.entries(categoryTotals)
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 5);
+  
+  // Get unique categories for dropdown
+  const uniqueCategories = Array.from(new Set(expenses.map(e => e.category).filter(Boolean)));
 
   return (
-    <div className={darkMode ? 'dark' : ''}>
+    <div dir="rtl" className={darkMode ? 'dark' : ''}>
       <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
-        <Toaster position="top-right" />
+        <Toaster position="top-right" richColors />
         
         <div className="container mx-auto p-4 max-w-7xl">
           {/* Header */}
@@ -132,7 +221,10 @@ export default function App() {
             
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setDarkMode(!darkMode)}
+                onClick={() => {
+                  console.log('Toggle clicked, current darkMode:', darkMode);
+                  setDarkMode(!darkMode);
+                }}
                 className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -160,51 +252,117 @@ export default function App() {
             })}
           </div>
 
-          {/* Summary */}
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <div className="text-sm text-gray-600 dark:text-gray-400">סך הוצאות</div>
-            <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-              ₪{total.toFixed(2)}
+          {/* Summary with Visual Bar */}
+          <div className="mb-6 space-y-4">
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="text-sm text-gray-600 dark:text-gray-400">סך הוצאות</div>
+              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                ₪{total.toFixed(2)}
+              </div>
             </div>
+            
+            {/* Category Breakdown Bar */}
+            {categories.length > 0 && (
+              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">פילוח לפי קטגוריה</div>
+                <div className="space-y-2">
+                  {categories.map(([category, amount]) => {
+                    const percentage = (amount / total) * 100;
+                    return (
+                      <div key={category}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">₪{amount.toFixed(2)} ({percentage.toFixed(1)}%)</span>
+                          <span className="text-gray-700 dark:text-gray-300">{category || 'אחר'}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5" dir="ltr">
+                          <div
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500"
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Add Expense Row */}
           <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  addExpense();
+                }}
+                disabled={!newExpense.date || !newExpense.description || !newExpense.amount}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> הוסף
+              </button>
+              <div className="relative" ref={categoryRef}>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="בחר או הקלד קטגוריה"
+                    value={newExpense.category}
+                    onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
+                    onFocus={() => setShowCategoryDropdown(true)}
+                    onKeyDown={handleKeyDown}
+                    className="w-full px-3 py-2 pl-8 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+                {showCategoryDropdown && uniqueCategories.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-lg max-h-48 overflow-y-auto">
+                    {uniqueCategories.map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setNewExpense({ ...newExpense, category: cat });
+                          setShowCategoryDropdown(false);
+                        }}
+                        className="w-full px-3 py-2 text-right text-gray-900 dark:text-gray-100 hover:bg-blue-50 dark:hover:bg-gray-600 transition-colors border-b border-gray-100 dark:border-gray-600 last:border-b-0"
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <input
-                type="date"
-                value={newExpense.date}
-                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600"
+                type="number"
+                step="0.01"
+                placeholder="סכום (₪)"
+                value={newExpense.amount}
+                onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
               />
               <input
                 type="text"
                 placeholder="תיאור"
                 value={newExpense.description}
                 onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600"
+                onKeyDown={handleKeyDown}
+                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
               />
               <input
-                type="number"
-                step="0.01"
-                placeholder="סכום"
-                value={newExpense.amount}
-                onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600"
+                type="date"
+                value={newExpense.date}
+                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
               />
-              <input
-                type="text"
-                placeholder="קטגוריה"
-                value={newExpense.category}
-                onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600"
-              />
-              <button
-                onClick={addExpense}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded font-medium flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> הוסף
-              </button>
             </div>
           </div>
 
@@ -213,11 +371,11 @@ export default function App() {
             <table className="w-full">
               <thead className="bg-gray-100 dark:bg-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">תאריך</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">תיאור</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">סכום</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">קטגוריה</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold">פעולות</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold">קטגוריה</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold">סכום</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold">תיאור</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold">תאריך</th>
                 </tr>
               </thead>
               <tbody>
@@ -227,56 +385,7 @@ export default function App() {
                     className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                   >
                     <td className="px-4 py-3 text-sm text-right">
-                      {editingId === expense.id ? (
-                        <input
-                          type="date"
-                          value={expense.date}
-                          onChange={(e) => updateExpense(expense.id, { date: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500"
-                        />
-                      ) : (
-                        expense.date
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right">
-                      {editingId === expense.id ? (
-                        <input
-                          type="text"
-                          value={expense.description}
-                          onChange={(e) => updateExpense(expense.id, { description: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500"
-                        />
-                      ) : (
-                        expense.description
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium text-right">
-                      {editingId === expense.id ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={expense.amount}
-                          onChange={(e) => updateExpense(expense.id, { amount: parseFloat(e.target.value) })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500"
-                        />
-                      ) : (
-                        `₪${expense.amount.toFixed(2)}`
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right">
-                      {editingId === expense.id ? (
-                        <input
-                          type="text"
-                          value={expense.category}
-                          onChange={(e) => updateExpense(expense.id, { category: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500"
-                        />
-                      ) : (
-                        expense.category
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 justify-end">
                         {editingId === expense.id ? (
                           <button
                             onClick={() => setEditingId(null)}
@@ -299,6 +408,56 @@ export default function App() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      {editingId === expense.id ? (
+                        <input
+                          type="text"
+                          list="categories"
+                          value={expense.category}
+                          onChange={(e) => updateExpense(expense.id, { category: e.target.value })}
+                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                        />
+                      ) : (
+                        expense.category || 'אחר'
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-medium text-right">
+                      {editingId === expense.id ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={expense.amount}
+                          onChange={(e) => updateExpense(expense.id, { amount: parseFloat(e.target.value) })}
+                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                        />
+                      ) : (
+                        `₪${expense.amount.toFixed(2)}`
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      {editingId === expense.id ? (
+                        <input
+                          type="text"
+                          value={expense.description}
+                          onChange={(e) => updateExpense(expense.id, { description: e.target.value })}
+                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                        />
+                      ) : (
+                        expense.description
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      {editingId === expense.id ? (
+                        <input
+                          type="date"
+                          value={expense.date}
+                          onChange={(e) => updateExpense(expense.id, { date: e.target.value })}
+                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                        />
+                      ) : (
+                        expense.date
+                      )}
                     </td>
                   </tr>
                 ))}

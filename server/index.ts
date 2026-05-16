@@ -13,7 +13,15 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, { path: '/finance/socket.io' });
 
 const DB_PATH = path.join(__dirname, '../data/expenses.db');
-const db = new sqlite3.Database(DB_PATH);
+console.log('Database path:', DB_PATH);
+
+const db = new sqlite3.Database(DB_PATH, (err) => {
+  if (err) {
+    console.error('Error opening database:', err);
+  } else {
+    console.log('Database connected successfully');
+  }
+});
 
 // Initialize database
 db.serialize(() => {
@@ -57,15 +65,28 @@ app.get('/api/expenses', (req, res) => {
 // Add expense
 app.post('/api/expenses', (req, res) => {
   const { date, description, amount, category, user } = req.body;
+  console.log('Adding expense:', { date, description, amount, category, user });
+  
+  if (!date || !description || amount === undefined) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
   
   db.run(
     'INSERT INTO expenses (date, description, amount, category, user) VALUES (?, ?, ?, ?, ?)',
-    [date, description, amount, category, user],
+    [date, description, amount, category || '', user || 'user1'],
     function(err) {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        console.error('Error inserting expense:', err);
+        return res.status(500).json({ error: err.message });
+      }
       
+      console.log('Expense inserted with ID:', this.lastID);
       db.get('SELECT * FROM expenses WHERE id = ?', [this.lastID], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) {
+          console.error('Error retrieving expense:', err);
+          return res.status(500).json({ error: err.message });
+        }
+        console.log('Expense retrieved:', row);
         io.emit('expense-added', row);
         res.json(row);
       });
@@ -134,6 +155,8 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 8080;
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Finance Manager running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(`Database: ${DB_PATH}`);
 });
