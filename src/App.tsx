@@ -204,7 +204,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                     viewMode === mode
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      : 'bg-gray-200 hover:bg-gray-300
                   }`}
                 >
                   {labels[mode]}
@@ -215,27 +215,27 @@ export default function App() {
 
           {/* Summary with Visual Bar */}
           <div className="mb-6 space-y-4">
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <div className="text-sm text-gray-600 dark:text-gray-400">סך הוצאות</div>
-              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="text-sm text-gray-600">סך הוצאות</div>
+              <div className="text-3xl font-bold text-blue-600">
                 ₪{total.toFixed(2)}
               </div>
             </div>
             
             {/* Category Breakdown Bar */}
             {categories.length > 0 && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">פילוח לפי קטגוריה</div>
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="text-sm font-semibold mb-3 text-gray-700">פילוח לפי קטגוריה</div>
                 <div className="space-y-2">
                   {categories.map(([category, amount]) => {
                     const percentage = (amount / total) * 100;
                     return (
                       <div key={category}>
                         <div className="flex justify-between text-sm mb-1">
-                          <span className="font-medium text-gray-900 dark:text-gray-100">₪{amount.toFixed(2)} ({percentage.toFixed(1)}%)</span>
-                          <span className="text-gray-700 dark:text-gray-300">{category || 'אחר'}</span>
+                          <span className="font-medium text-gray-900">₪{amount.toFixed(2)} ({percentage.toFixed(1)}%)</span>
+                          <span className="text-gray-700">{category || 'אחר'}</span>
                         </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5" dir="ltr">
+                        <div className="w-full bg-gray-200 rounded-full h-2.5" dir="ltr">
                           <div
                             className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500"
                             style={{ width: `${percentage}%` }}
@@ -250,7 +250,7 @@ export default function App() {
           </div>
 
           {/* Add Expense Row */}
-          <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <button
                 type="button"
@@ -272,18 +272,18 @@ export default function App() {
                     onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
                     onFocus={() => setShowCategoryDropdown(true)}
                     onKeyDown={handleKeyDown}
-                    className="w-full px-3 py-2 pl-8 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
+                    className="w-full px-3 py-2 pl-8 rounded bg-white border border-gray-300 text-right"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                   >
                     <ChevronDown className={`w-4 h-4 transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`} />
                   </button>
                 </div>
                 {showCategoryDropdown && uniqueCategories.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded shadow-lg max-h-48 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
                     {uniqueCategories.map(cat => (
                       <button
                         key={cat}
@@ -292,7 +292,7 @@ export default function App() {
                           setNewExpense({ ...newExpense, category: cat });
                           setShowCategoryDropdown(false);
                         }}
-                        className="w-full px-3 py-2 text-right text-gray-900 dark:text-gray-100 hover:bg-blue-50 dark:hover:bg-gray-600 transition-colors border-b border-gray-100 dark:border-gray-600 last:border-b-0"
+                        className="w-full px-3 py-2 text-right text-gray-900 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0"
                       >
                         {cat}
                       </button>
@@ -307,7 +307,7 @@ export default function App() {
                 value={newExpense.amount}
                 onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
                 onKeyDown={handleKeyDown}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
+                className="px-3 py-2 rounded bg-white border border-gray-300 text-right"
               />
               <input
                 type="text"
@@ -315,22 +315,22 @@ export default function App() {
                 value={newExpense.description}
                 onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
                 onKeyDown={handleKeyDown}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
+                className="px-3 py-2 rounded bg-white border border-gray-300 text-right"
               />
               <input
                 type="date"
                 value={newExpense.date}
                 onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
                 onKeyDown={handleKeyDown}
-                className="px-3 py-2 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-right"
+                className="px-3 py-2 rounded bg-white border border-gray-300 text-right"
               />
             </div>
           </div>
 
           {/* Expenses Table */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full">
-              <thead className="bg-gray-100 dark:bg-gray-700">
+              <thead className="bg-gray-100">
                 <tr>
                   <th className="px-4 py-3 text-right text-sm font-semibold">פעולות</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold">קטגוריה</th>
@@ -343,28 +343,28 @@ export default function App() {
                 {expenses.map((expense) => (
                   <tr
                     key={expense.id}
-                    className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    className="border-t border-gray-200 hover:bg-gray-50"
                   >
                     <td className="px-4 py-3 text-sm text-right">
                       <div className="flex gap-2 justify-end">
                         {editingId === expense.id ? (
                           <button
                             onClick={() => setEditingId(null)}
-                            className="text-green-600 hover:text-green-700 dark:text-green-400"
+                            className="text-green-600 hover:text-green-700"
                           >
                             שמור
                           </button>
                         ) : (
                           <button
                             onClick={() => setEditingId(expense.id)}
-                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                            className="text-blue-600 hover:text-blue-700"
                           >
                             ערוך
                           </button>
                         )}
                         <button
                           onClick={() => deleteExpense(expense.id)}
-                          className="text-red-600 hover:text-red-700 dark:text-red-400"
+                          className="text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -377,7 +377,7 @@ export default function App() {
                           list="categories"
                           value={expense.category}
                           onChange={(e) => updateExpense(expense.id, { category: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
                         />
                       ) : (
                         expense.category || 'אחר'
@@ -390,7 +390,7 @@ export default function App() {
                           step="0.01"
                           value={expense.amount}
                           onChange={(e) => updateExpense(expense.id, { amount: parseFloat(e.target.value) })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
                         />
                       ) : (
                         `₪${expense.amount.toFixed(2)}`
@@ -402,7 +402,7 @@ export default function App() {
                           type="text"
                           value={expense.description}
                           onChange={(e) => updateExpense(expense.id, { description: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
                         />
                       ) : (
                         expense.description
@@ -414,7 +414,7 @@ export default function App() {
                           type="date"
                           value={expense.date}
                           onChange={(e) => updateExpense(expense.id, { date: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-right"
+                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
                         />
                       ) : (
                         expense.date
