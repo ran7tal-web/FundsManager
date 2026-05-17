@@ -250,19 +250,32 @@ export default function App() {
           </div>
 
           {/* Add Expense Row */}
-          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  addExpense();
-                }}
-                disabled={!newExpense.date || !newExpense.description || !newExpense.amount}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded font-medium flex items-center justify-center gap-2 transition-colors"
-              >
-                <Plus className="w-4 h-4" /> הוסף
-              </button>
+          <div className="mb-4 p-4 bg-slate-100 rounded-2xl">
+            <div className="flex flex-col md:grid md:grid-cols-5 gap-3">
+              <input
+                type="date"
+                value={newExpense.date}
+                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="h-10 md:h-10 px-3 py-2 rounded-xl bg-white border-2 border-slate-200 text-right font-medium"
+              />
+              <input
+                type="text"
+                placeholder="תיאור"
+                value={newExpense.description}
+                onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="h-10 md:h-10 px-3 py-2 rounded-xl bg-white border-2 border-slate-200 text-right font-medium"
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="סכום (₪)"
+                value={newExpense.amount}
+                onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                onKeyDown={handleKeyDown}
+                className="h-10 md:h-10 px-3 py-2 rounded-xl bg-white border-2 border-slate-200 text-right font-medium"
+              />
               <div className="relative" ref={categoryRef}>
                 <div className="relative">
                   <input
@@ -272,18 +285,18 @@ export default function App() {
                     onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
                     onFocus={() => setShowCategoryDropdown(true)}
                     onKeyDown={handleKeyDown}
-                    className="w-full px-3 py-2 pl-8 rounded bg-white border border-gray-300 text-right"
+                    className="w-full h-10 md:h-10 px-3 py-2 pl-8 rounded-xl bg-white border-2 border-slate-200 text-right font-medium"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-800"
                   >
                     <ChevronDown className={`w-4 h-4 transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`} />
                   </button>
                 </div>
                 {showCategoryDropdown && uniqueCategories.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-white border-2 border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                     {uniqueCategories.map(cat => (
                       <button
                         key={cat}
@@ -292,7 +305,7 @@ export default function App() {
                           setNewExpense({ ...newExpense, category: cat });
                           setShowCategoryDropdown(false);
                         }}
-                        className="w-full px-3 py-2 text-right text-gray-900 hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0"
+                        className="w-full px-3 py-2 text-right text-slate-800 hover:bg-blue-100 transition-colors border-b border-slate-100 last:border-b-0 font-medium"
                       >
                         {cat}
                       </button>
@@ -300,71 +313,58 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="סכום (₪)"
-                value={newExpense.amount}
-                onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                onKeyDown={handleKeyDown}
-                className="px-3 py-2 rounded bg-white border border-gray-300 text-right"
-              />
-              <input
-                type="text"
-                placeholder="תיאור"
-                value={newExpense.description}
-                onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
-                onKeyDown={handleKeyDown}
-                className="px-3 py-2 rounded bg-white border border-gray-300 text-right"
-              />
-              <input
-                type="date"
-                value={newExpense.date}
-                onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
-                onKeyDown={handleKeyDown}
-                className="px-3 py-2 rounded bg-white border border-gray-300 text-right"
-              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  addExpense();
+                }}
+                disabled={!newExpense.date || !newExpense.description || !newExpense.amount}
+                className="h-10 md:h-10 md:col-span-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-black flex items-center justify-center gap-2 transition-colors shadow-md active:scale-95"
+              >
+                <Plus className="w-4 h-4" /> הוסף
+              </button>
             </div>
           </div>
 
           {/* Expenses Table */}
-          <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-lg overflow-hidden border-2 border-slate-100">
             <table className="w-full">
-              <thead className="bg-gray-100">
+              <thead className="bg-slate-100 border-b-2 border-slate-200">
                 <tr>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">פעולות</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">קטגוריה</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">סכום</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">תיאור</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold">תאריך</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">פעולות</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">קטגוריה</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">סכום</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">תיאור</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">תאריך</th>
                 </tr>
               </thead>
               <tbody>
                 {expenses.map((expense) => (
                   <tr
                     key={expense.id}
-                    className="border-t border-gray-200 hover:bg-gray-50"
+                    className="border-t-2 border-slate-100 hover:bg-slate-50 transition-colors"
                   >
                     <td className="px-4 py-3 text-sm text-right">
                       <div className="flex gap-2 justify-end">
                         {editingId === expense.id ? (
                           <button
                             onClick={() => setEditingId(null)}
-                            className="text-green-600 hover:text-green-700"
+                            className="h-8 px-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-black text-xs transition-colors active:scale-95"
                           >
                             שמור
                           </button>
                         ) : (
                           <button
                             onClick={() => setEditingId(expense.id)}
-                            className="text-blue-600 hover:text-blue-700"
+                            className="h-8 px-3 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 font-black text-xs transition-colors active:scale-95"
                           >
                             ערוך
                           </button>
                         )}
                         <button
                           onClick={() => deleteExpense(expense.id)}
-                          className="text-red-600 hover:text-red-700"
+                          className="h-8 w-8 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 flex items-center justify-center font-black text-xs transition-colors active:scale-95"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -377,7 +377,7 @@ export default function App() {
                           list="categories"
                           value={expense.category}
                           onChange={(e) => updateExpense(expense.id, { category: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
+                          className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
                         expense.category || 'אחר'
@@ -390,7 +390,7 @@ export default function App() {
                           step="0.01"
                           value={expense.amount}
                           onChange={(e) => updateExpense(expense.id, { amount: parseFloat(e.target.value) })}
-                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
+                          className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
                         `₪${expense.amount.toFixed(2)}`
@@ -402,7 +402,7 @@ export default function App() {
                           type="text"
                           value={expense.description}
                           onChange={(e) => updateExpense(expense.id, { description: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
+                          className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
                         expense.description
@@ -414,7 +414,7 @@ export default function App() {
                           type="date"
                           value={expense.date}
                           onChange={(e) => updateExpense(expense.id, { date: e.target.value })}
-                          className="w-full px-2 py-1 rounded bg-white border border-gray-300 text-right"
+                          className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
                         expense.date
