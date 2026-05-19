@@ -18,11 +18,18 @@ export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('today');
   const [socket, setSocket] = useState<Socket | null>(null);
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
   const [newExpense, setNewExpense] = useState({ date: today, description: '', amount: '', category: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Partial<Expense> | null>(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryRef = useRef<HTMLDivElement>(null);
+
+  function getLocalDateString(date = new Date()) {
+    const localDate = new Date(date);
+    localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+    return localDate.toISOString().split('T')[0];
+  }
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -82,7 +89,7 @@ export default function App() {
         break;
     }
     
-    return { start: start.toISOString().split('T')[0], end: now.toISOString().split('T')[0] };
+    return { start: getLocalDateString(start), end: getLocalDateString(now) };
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -90,6 +97,40 @@ export default function App() {
       e.preventDefault();
       addExpense();
     }
+  };
+
+  const startEditing = (expense: Expense) => {
+    setEditingId(expense.id);
+    setEditingExpense({ ...expense });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditingExpense(null);
+  };
+
+  const saveEditedExpense = async () => {
+    if (!editingId || !editingExpense) return;
+    const updated = {
+      ...editingExpense,
+      amount: Number(editingExpense.amount || 0),
+      date: editingExpense.date || today,
+      description: editingExpense.description || '',
+      category: editingExpense.category || '',
+    } as Expense;
+
+    await fetch(`./api/expenses/${editingId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+
+    setExpenses(prev => prev.map(e => e.id === editingId ? updated : e));
+    cancelEditing();
+  };
+
+  const setEditingField = (field: keyof Expense, value: string | number) => {
+    setEditingExpense(prev => prev ? { ...prev, [field]: value } : prev);
   };
 
   const fetchExpenses = async () => {
@@ -130,7 +171,7 @@ export default function App() {
       
       const expense = await res.json();
       setExpenses(prev => [expense, ...prev]);
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       setNewExpense({ date: today, description: '', amount: '', category: '' });
       toast.success('הוצאה נוספה');
     } catch (error) {
@@ -181,8 +222,7 @@ export default function App() {
 
   return (
     <div dir="rtl">
-      <div className="min-h-screen bg-white text-gray-900">
-        <Toaster position="top-right" richColors />
+      <div className="min-h-screen overflow-auto bg-white text-gray-900">
         
         <div className="container mx-auto p-4 max-w-7xl">
           {/* Header */}
@@ -348,15 +388,23 @@ export default function App() {
                     <td className="px-4 py-3 text-sm text-right">
                       <div className="flex gap-2 justify-end">
                         {editingId === expense.id ? (
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="h-8 px-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-black text-xs transition-colors active:scale-95"
-                          >
-                            שמור
-                          </button>
+                          <>
+                            <button
+                              onClick={saveEditedExpense}
+                              className="h-8 px-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-black text-xs transition-colors active:scale-95"
+                            >
+                              שמור
+                            </button>
+                            <button
+                              onClick={cancelEditing}
+                              className="h-8 px-3 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-black text-xs transition-colors active:scale-95"
+                            >
+                              ביטול
+                            </button>
+                          </>
                         ) : (
                           <button
-                            onClick={() => setEditingId(expense.id)}
+                            onClick={() => startEditing(expense)}
                             className="h-8 px-3 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 font-black text-xs transition-colors active:scale-95"
                           >
                             ערוך
@@ -375,8 +423,8 @@ export default function App() {
                         <input
                           type="text"
                           list="categories"
-                          value={expense.category}
-                          onChange={(e) => updateExpense(expense.id, { category: e.target.value })}
+                          value={editingExpense?.category ?? expense.category}
+                          onChange={(e) => setEditingField('category', e.target.value)}
                           className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
@@ -388,8 +436,8 @@ export default function App() {
                         <input
                           type="number"
                           step="0.01"
-                          value={expense.amount}
-                          onChange={(e) => updateExpense(expense.id, { amount: parseFloat(e.target.value) })}
+                          value={editingExpense?.amount ?? expense.amount}
+                          onChange={(e) => setEditingField('amount', e.target.value)}
                           className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
@@ -400,8 +448,8 @@ export default function App() {
                       {editingId === expense.id ? (
                         <input
                           type="text"
-                          value={expense.description}
-                          onChange={(e) => updateExpense(expense.id, { description: e.target.value })}
+                          value={editingExpense?.description ?? expense.description}
+                          onChange={(e) => setEditingField('description', e.target.value)}
                           className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
@@ -412,8 +460,8 @@ export default function App() {
                       {editingId === expense.id ? (
                         <input
                           type="date"
-                          value={expense.date}
-                          onChange={(e) => updateExpense(expense.id, { date: e.target.value })}
+                          value={editingExpense?.date ?? expense.date}
+                          onChange={(e) => setEditingField('date', e.target.value)}
                           className="w-full px-2 py-1 rounded-lg bg-white border-2 border-slate-200 text-right font-medium"
                         />
                       ) : (
