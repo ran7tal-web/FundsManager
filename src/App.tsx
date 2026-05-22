@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Plus, Trash2, TrendingUp, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, ChevronDown, Download } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
 interface Expense {
@@ -205,6 +205,45 @@ export default function App() {
     }
   };
 
+  const exportToCSV = () => {
+    if (expenses.length === 0) {
+      toast.error('אין הוצאות לייצוא');
+      return;
+    }
+
+    // CSV Headers in Hebrew
+    const headers = ['תאריך', 'תיאור', 'סכום', 'קטגוריה', 'משתמש'];
+    const csvContent = [
+      headers.join(','),
+      ...expenses.map(e => [
+        e.date,
+        `"${e.description.replace(/"/g, '""')}"`,
+        e.amount.toFixed(2),
+        `"${(e.category || 'אחר').replace(/"/g, '""')}"`,
+        e.user
+      ].join(','))
+    ].join('\n');
+
+    // Add BOM for proper Hebrew encoding in Excel
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    const { start, end } = getDateRange();
+    const viewLabels = { today: 'היום', week: 'שבוע', month: 'חודש', quarter: 'רבעון', year: 'שנה' };
+    const filename = `הוצאות_${viewLabels[viewMode]}_${start}_עד_${end}.csv`;
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('הקובץ יוצא בהצלחה');
+  };
+
   const total = expenses.reduce((sum, e) => sum + e.amount, 0);
   
   // Group by category for visualization
@@ -224,24 +263,32 @@ export default function App() {
     <div dir="rtl">
       <div className="min-h-screen overflow-auto bg-white text-gray-900">
         
-        <div className="container mx-auto p-4 max-w-7xl">
+        <div className="container mx-auto px-3 sm:px-4 py-4 max-w-7xl">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
             <div className="flex items-center gap-4">
               <TrendingUp className="w-8 h-8 text-blue-500" />
-              <h1 className="text-3xl font-bold">ניהול כספים</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">ניהול כספים</h1>
             </div>
+            <button
+              onClick={exportToCSV}
+              disabled={expenses.length === 0}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg font-bold flex items-center gap-2 transition-colors shadow-md active:scale-95"
+            >
+              <Download className="w-4 h-4" />
+              ייצוא לרואה חשבון (CSV)
+            </button>
           </div>
 
           {/* View Mode Selector */}
-          <div className="flex gap-2 mb-6 overflow-x-auto">
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
             {(['today', 'week', 'month', 'quarter', 'year'] as ViewMode[]).map(mode => {
               const labels = { today: 'היום', week: 'שבוע', month: 'חודש', quarter: 'רבעון', year: 'שנה' };
               return (
                 <button
                   key={mode}
                   onClick={() => setViewMode(mode)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
                     viewMode === mode
                       ? 'bg-blue-500 text-white'
                       : 'bg-slate-200 hover:bg-slate-300'
@@ -271,9 +318,9 @@ export default function App() {
                     const percentage = (amount / total) * 100;
                     return (
                       <div key={category}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="font-medium text-gray-900">₪{amount.toFixed(2)} ({percentage.toFixed(1)}%)</span>
-                          <span className="text-gray-700">{category || 'אחר'}</span>
+                        <div className="flex flex-col sm:flex-row justify-between text-sm mb-1 gap-1">
+                          <span className="font-medium text-gray-900 order-2 sm:order-1">₪{amount.toFixed(2)} ({percentage.toFixed(1)}%)</span>
+                          <span className="text-gray-700 font-semibold order-1 sm:order-2">{category || 'אחר'}</span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2.5" dir="ltr">
                           <div
@@ -290,8 +337,8 @@ export default function App() {
           </div>
 
           {/* Add Expense Row */}
-          <div className="mb-4 p-4 bg-slate-100 rounded-2xl">
-            <div className="flex flex-col md:grid md:grid-cols-5 gap-3">
+          <div className="mb-4 p-3 sm:p-4 bg-slate-100 rounded-2xl">
+            <div className="flex flex-col sm:grid sm:grid-cols-2 md:grid-cols-5 gap-2 sm:gap-3">
               <input
                 type="date"
                 value={newExpense.date}
@@ -360,7 +407,7 @@ export default function App() {
                   addExpense();
                 }}
                 disabled={!newExpense.date || !newExpense.description || !newExpense.amount}
-                className="h-10 md:h-10 md:col-span-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-black flex items-center justify-center gap-2 transition-colors shadow-md active:scale-95"
+                className="h-10 md:h-10 sm:col-span-2 md:col-span-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-black flex items-center justify-center gap-2 transition-colors shadow-md active:scale-95"
               >
                 <Plus className="w-4 h-4" /> הוסף
               </button>
@@ -369,14 +416,15 @@ export default function App() {
 
           {/* Expenses Table */}
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden border-2 border-slate-100">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px]">
               <thead className="bg-slate-100 border-b-2 border-slate-200">
                 <tr>
-                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">פעולות</th>
-                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">קטגוריה</th>
-                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">סכום</th>
-                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">תיאור</th>
-                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700">תאריך</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700 whitespace-nowrap">פעולות</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700 whitespace-nowrap">קטגוריה</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700 whitespace-nowrap">סכום</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700 whitespace-nowrap">תיאור</th>
+                  <th className="px-4 py-3 text-right text-sm font-black text-slate-700 whitespace-nowrap">תאריך</th>
                 </tr>
               </thead>
               <tbody>
@@ -386,18 +434,18 @@ export default function App() {
                     className="border-t-2 border-slate-100 hover:bg-slate-50 transition-colors"
                   >
                     <td className="px-4 py-3 text-sm text-right">
-                      <div className="flex gap-2 justify-end">
+                      <div className="flex gap-1 sm:gap-2 justify-end flex-nowrap">
                         {editingId === expense.id ? (
                           <>
                             <button
                               onClick={saveEditedExpense}
-                              className="h-8 px-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-black text-xs transition-colors active:scale-95"
+                              className="h-8 px-2 sm:px-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-black text-xs transition-colors active:scale-95 whitespace-nowrap"
                             >
                               שמור
                             </button>
                             <button
                               onClick={cancelEditing}
-                              className="h-8 px-3 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-black text-xs transition-colors active:scale-95"
+                              className="h-8 px-2 sm:px-3 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 font-black text-xs transition-colors active:scale-95 whitespace-nowrap"
                             >
                               ביטול
                             </button>
@@ -405,14 +453,14 @@ export default function App() {
                         ) : (
                           <button
                             onClick={() => startEditing(expense)}
-                            className="h-8 px-3 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 font-black text-xs transition-colors active:scale-95"
+                            className="h-8 px-2 sm:px-3 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 font-black text-xs transition-colors active:scale-95 whitespace-nowrap"
                           >
                             ערוך
                           </button>
                         )}
                         <button
                           onClick={() => deleteExpense(expense.id)}
-                          className="h-8 w-8 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 flex items-center justify-center font-black text-xs transition-colors active:scale-95"
+                          className="h-8 w-8 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 flex items-center justify-center font-black text-xs transition-colors active:scale-95 flex-shrink-0"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -472,6 +520,7 @@ export default function App() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>
