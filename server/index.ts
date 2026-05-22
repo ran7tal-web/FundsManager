@@ -43,105 +43,258 @@ db.serialize(() => {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
 
-// Get expenses with date range filter
-app.get('/api/expenses', (req, res) => {
-  const { start, end } = req.query;
-  let query = 'SELECT * FROM expenses';
-  const params: any[] = [];
+// Validation helper functions
+const isValidDate = (dateString: string): boolean => {
+  const regex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!regex.test(dateString)) return false;
+  const date = new Date(dateString);
+  return date instanceof Date && !isNaN(date.getTime());
+};
+
+const validateExpenseInput = (data: any): { valid: boolean; errors: string[] } => {
+  const errors: string[] = [];
   
-  if (start && end) {
-    query += ' WHERE date BETWEEN ? AND ?';
-    params.push(start, end);
+  if (!data.date || typeof data.date !== 'string' || !isValidDate(data.date)) {
+    errors.push('Date must be in YYYY-MM-DD format');
   }
   
-  query += ' ORDER BY date DESC, id DESC';
+  if (!data.description || typeof data.description !== 'string' || data.description.trim().length === 0) {
+    errors.push('Description must be a non-empty string');
+  }
   
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+  if (data.amount === undefined || data.amount === null || typeof data.amount !== 'number' || data.amount <= 0) {
+    errors.push('Amount must be a positive number');
+  }
+  
+  if (data.category !== undefined && data.category !== null && typeof data.category !== 'string') {
+    errors.push('Category must be a string');
+  }
+  
+  if (data.user && typeof data.user !== 'string') {
+    errors.push('User must be a string');
+  }
+  
+  return { valid: errors.length === 0, errors };
+};
+
+// Get expenses with date range filter and pagination
+app.get('/api/expenses', (req, res) => {
+  try {
+    const { start, end, page, limit } = req.query;
+    
+    // Parse pagination params
+    const pageNum = page ? parseInt(page as string, 10) : 1;
+    const limitNum = limit ? parseInt(limit as string, 10) : 50;
+    const offset = (pageNum - 1) * limitNum;
+    
+    // Validate pagination params
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({ error: 'Invalid page number' });
+    }
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 1000) {
+      return res.status(400).json({ error: 'Invalid limit (must be 1-1000)' });
+    }
+    
+    let whereClause = '';
+    const params: any[] = [];
+    
+    if (start && end) {
+      whereClause = ' WHERE date BETWEEN ? AND ?';
+      params.push(start, end);
+    }
+    
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM expenses${whereClause}`;
+    db.get(countQuery, params, (err, countResult: any) => {
+      if (err) {
+        console.error('Error counting expenses:', err);
+        return res.status(500).json({ error: 'Failed to count expenses' });
+      }
+      
+      const totalCount = countResult.total;
+      const totalPages = Math.ceil(totalCount / limitNum);
+      
+      // Get paginated data
+      const dataQuery = `SELECT * FROM expenses${whereClause} ORDER BY date DESC, id DESC LIMIT ? OFFSET ?`;
+      db.all(dataQuery, [...params, limitNum, offset], (err, rows) => {
+        if (err) {
+          console.error('Error fetching expenses:', err);
+          return res.status(500).json({ error: 'Failed to fetch expenses' });
+        }
+        
+        res.json({
+          data: rows,
+          totalCount,
+          page: pageNum,
+          totalPages,
+          limit: limitNum
+        });
+      });
+    });
+  } catch (error: any) {
+    console.error('Unexpected error in GET /api/expenses:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Add expense
 app.post('/api/expenses', (req, res) => {
-  const { date, description, amount, category, user } = req.body;
-  console.log('Adding expense:', { date, description, amount, category, user });
-  
-  if (!date || !description || amount === undefined) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-  
-  db.run(
-    'INSERT INTO expenses (date, description, amount, category, user) VALUES (?, ?, ?, ?, ?)',
-    [date, description, amount, category || '', user || 'user1'],
-    function(err) {
-      if (err) {
-        console.error('Error inserting expense:', err);
-        return res.status(500).json({ error: err.message });
-      }
-      
-      console.log('Expense inserted with ID:', this.lastID);
-      db.get('SELECT * FROM expenses WHERE id = ?', [this.lastID], (err, row) => {
-        if (err) {
-          console.error('Error retrieving expense:', err);
-          return res.status(500).json({ error: err.message });
-        }
-        console.log('Expense retrieved:', row);
-        io.emit('expense-added', row);
-        res.json(row);
+  try {
+    const { date, description, amount, category, user } = req.body;
+    console.log('Adding expense:', { date, description, amount, category, user });
+    
+    // Validate input
+    const validation = validateExpenseInput({ date, description, amount, category, user });
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.errors 
       });
     }
-  );
+    
+    db.run(
+      'INSERT INTO expenses (date, description, amount, category, user) VALUES (?, ?, ?, ?, ?)',
+      [date.trim(), description.trim(), amount, (category || '').trim(), (user || 'user1').trim()],
+      function(err) {
+        if (err) {
+          console.error('Error inserting expense:', err);
+          return res.status(500).json({ error: 'Database insertion failed' });
+        }
+        
+        console.log('Expense inserted with ID:', this.lastID);
+        db.get('SELECT * FROM expenses WHERE id = ?', [this.lastID], (err, row) => {
+          if (err) {
+            console.error('Error retrieving expense:', err);
+            return res.status(500).json({ error: 'Failed to retrieve created expense' });
+          }
+          console.log('Expense retrieved:', row);
+          // Only emit socket event after successful DB operation
+          io.emit('expense-added', row);
+          res.json(row);
+        });
+      }
+    );
+  } catch (error: any) {
+    console.error('Unexpected error in POST /api/expenses:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Update expense
 app.put('/api/expenses/:id', (req, res) => {
-  const { id } = req.params;
-  const { date, description, amount, category } = req.body;
-  
-  db.run(
-    'UPDATE expenses SET date = ?, description = ?, amount = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [date, description, amount, category, id],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      
-      db.get('SELECT * FROM expenses WHERE id = ?', [id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message });
-        io.emit('expense-updated', row);
-        res.json(row);
+  try {
+    const { id } = req.params;
+    const { date, description, amount, category } = req.body;
+    
+    // Validate ID
+    const expenseId = parseInt(id, 10);
+    if (isNaN(expenseId) || expenseId < 1) {
+      return res.status(400).json({ error: 'Invalid expense ID' });
+    }
+    
+    // Validate input
+    const validation = validateExpenseInput({ date, description, amount, category });
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.errors 
       });
     }
-  );
+    
+    db.run(
+      'UPDATE expenses SET date = ?, description = ?, amount = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [date.trim(), description.trim(), amount, (category || '').trim(), expenseId],
+      function(err) {
+        if (err) {
+          console.error('Error updating expense:', err);
+          return res.status(500).json({ error: 'Database update failed' });
+        }
+        
+        if (this.changes === 0) {
+          return res.status(404).json({ error: 'Expense not found' });
+        }
+        
+        db.get('SELECT * FROM expenses WHERE id = ?', [expenseId], (err, row) => {
+          if (err) {
+            console.error('Error retrieving updated expense:', err);
+            return res.status(500).json({ error: 'Failed to retrieve updated expense' });
+          }
+          // Only emit socket event after successful DB operation
+          io.emit('expense-updated', row);
+          res.json(row);
+        });
+      }
+    );
+  } catch (error: any) {
+    console.error('Unexpected error in PUT /api/expenses/:id:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Delete expense
 app.delete('/api/expenses/:id', (req, res) => {
-  const { id } = req.params;
-  
-  db.run('DELETE FROM expenses WHERE id = ?', [id], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    io.emit('expense-deleted', { id });
-    res.json({ success: true });
-  });
+  try {
+    const { id } = req.params;
+    
+    // Validate ID
+    const expenseId = parseInt(id, 10);
+    if (isNaN(expenseId) || expenseId < 1) {
+      return res.status(400).json({ error: 'Invalid expense ID' });
+    }
+    
+    // First, retrieve the expense before deletion (for undo functionality)
+    db.get('SELECT * FROM expenses WHERE id = ?', [expenseId], (err, row) => {
+      if (err) {
+        console.error('Error retrieving expense for deletion:', err);
+        return res.status(500).json({ error: 'Failed to retrieve expense' });
+      }
+      
+      if (!row) {
+        return res.status(404).json({ error: 'Expense not found' });
+      }
+      
+      db.run('DELETE FROM expenses WHERE id = ?', [expenseId], function(err) {
+        if (err) {
+          console.error('Error deleting expense:', err);
+          return res.status(500).json({ error: 'Database deletion failed' });
+        }
+        
+        // Only emit socket event after successful deletion
+        io.emit('expense-deleted', { id: expenseId });
+        res.json({ success: true, deleted: row });
+      });
+    });
+  } catch (error: any) {
+    console.error('Unexpected error in DELETE /api/expenses/:id:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Summary endpoint
 app.get('/api/summary', (req, res) => {
-  const { start, end } = req.query;
-  let query = 'SELECT category, SUM(amount) as total FROM expenses';
-  const params: any[] = [];
-  
-  if (start && end) {
-    query += ' WHERE date BETWEEN ? AND ?';
-    params.push(start, end);
+  try {
+    const { start, end } = req.query;
+    let query = 'SELECT category, SUM(amount) as total FROM expenses';
+    const params: any[] = [];
+    
+    if (start && end) {
+      query += ' WHERE date BETWEEN ? AND ?';
+      params.push(start, end);
+    }
+    
+    query += ' GROUP BY category';
+    
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('Error fetching summary:', err);
+        return res.status(500).json({ error: 'Failed to fetch summary' });
+      }
+      res.json(rows);
+    });
+  } catch (error: any) {
+    console.error('Unexpected error in GET /api/summary:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  
-  query += ' GROUP BY category';
-  
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
 });
 
 // Fallback to index.html

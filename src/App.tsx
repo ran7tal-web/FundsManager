@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Plus, Trash2, TrendingUp, ChevronDown, Download } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, ChevronDown, Download, Search, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
 interface Expense {
@@ -14,6 +14,13 @@ interface Expense {
 
 type ViewMode = 'today' | 'week' | 'month' | 'quarter' | 'year';
 
+interface PaginationData {
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  limit: number;
+}
+
 export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('today');
@@ -24,6 +31,18 @@ export default function App() {
   const [editingExpense, setEditingExpense] = useState<Partial<Expense> | null>(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryRef = useRef<HTMLDivElement>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+  const [paginationData, setPaginationData] = useState<PaginationData | null>(null);
+  
+  // Search/filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Budget warning state
+  const [monthlyBudget, setMonthlyBudget] = useState<number>(0);
+  const [showBudgetInput, setShowBudgetInput] = useState(false);
 
   function getLocalDateString(date = new Date()) {
     const localDate = new Date(date);
@@ -46,7 +65,8 @@ export default function App() {
     setSocket(s);
     
     s.on('expense-added', (expense) => {
-      setExpenses(prev => [expense, ...prev]);
+      // Refresh to maintain pagination consistency
+      fetchExpenses(currentPage);
       toast.success('משתמש אחר הוסיף הוצאה');
     });
     
@@ -56,7 +76,8 @@ export default function App() {
     });
     
     s.on('expense-deleted', ({ id }) => {
-      setExpenses(prev => prev.filter(e => e.id !== id));
+      // Refresh to maintain pagination consistency
+      fetchExpenses(currentPage);
       toast.info('משתמש אחר מחק הוצאה');
     });
     
@@ -64,8 +85,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    fetchExpenses();
+    setCurrentPage(1); // Reset to page 1 when view mode changes
+    fetchExpenses(1);
   }, [viewMode]);
+
+  useEffect(() => {
+    fetchExpenses(currentPage);
+  }, [currentPage]);
 
   const getDateRange = () => {
     const now = new Date();
@@ -133,19 +159,32 @@ export default function App() {
     setEditingExpense(prev => prev ? { ...prev, [field]: value } : prev);
   };
 
-  const fetchExpenses = async () => {
+  const fetchExpenses = async (page = currentPage) => {
     try {
       const { start, end } = getDateRange();
-      console.log('Fetching expenses:', { start, end });
-      const res = await fetch(`./api/expenses?start=${start}&end=${end}`);
+      console.log('Fetching expenses:', { start, end, page, limit: itemsPerPage });
+      const res = await fetch(`./api/expenses?start=${start}&end=${end}&page=${page}&limit=${itemsPerPage}`);
       
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
       
-      const data = await res.json();
-      console.log('Fetched expenses:', data);
-      setExpenses(data);
+      const response = await res.json();
+      console.log('Fetched expenses:', response);
+      
+      // Handle both old format (array) and new format (object with data)
+      if (Array.isArray(response)) {
+        setExpenses(response);
+        setPaginationData(null);
+      } else {
+        setExpenses(response.data || []);
+        setPaginationData({
+          totalCount: response.totalCount,
+          page: response.page,
+          totalPages: response.totalPages,
+          limit: response.limit
+        });
+      }
     } catch (error) {
       console.error('Error fetching expenses:', error);
       toast.error('שגיאה בטעינת הוצאות');
@@ -195,14 +234,57 @@ export default function App() {
   };
 
   const deleteExpense = async (id: number) => {
-    try {
-      await fetch(`./api/expenses/${id}`, { method: 'DELETE' });
-      setExpenses(prev => prev.filter(e => e.id !== id));
-      toast.success('הוצאה נמחקה');
-    } catch (error) {
-      console.error('Error deleting expense:', error);
-      toast.error('שגיאה במחיקת הוצאה');
-    }
+    const expenseToDelete = expenses.find(e => e.id === id);
+    if (!expenseToDelete) return;
+    
+    let isDeleted = false;
+    let deleteTimeout: NodeJS.Timeout;
+    
+    // Show undo toast
+    toast.success('הוצאה נמחקה', {
+      duration: 5000,
+      action: {
+        label: 'ביטול',
+        onClick: () => {
+          clearTimeout(deleteTimeout);
+          isDeleted = false;
+          // Restore the expense in UI immediately
+          setExpenses(prev => {
+            const exists = prev.find(e => e.id === id);
+            if (exists) return prev;
+            return [expenseToDelete, ...prev].sort((a, b) => {
+              if (b.date !== a.date) return b.date.localeCompare(a.date);
+              return b.id - a.id;
+            });
+          });
+          toast.info('המחיקה בוטלה');
+        }
+      }
+    });
+    
+    // Optimistically remove from UI
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    
+    // Wait 5 seconds before actually deleting
+    deleteTimeout = setTimeout(async () => {
+      if (!isDeleted) {
+        try {
+          const res = await fetch(`./api/expenses/${id}`, { method: 'DELETE' });
+          if (!res.ok) {
+            throw new Error('Delete failed');
+          }
+          isDeleted = true;
+        } catch (error) {
+          console.error('Error deleting expense:', error);
+          toast.error('שגיאה במחיקת הוצאה');
+          // Restore on error
+          setExpenses(prev => [expenseToDelete, ...prev].sort((a, b) => {
+            if (b.date !== a.date) return b.date.localeCompare(a.date);
+            return b.id - a.id;
+          }));
+        }
+      }
+    }, 5000);
   };
 
   const exportToCSV = () => {
@@ -244,10 +326,21 @@ export default function App() {
     toast.success('הקובץ יוצא בהצלחה');
   };
 
-  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+  // Client-side search filtering
+  const filteredExpenses = expenses.filter(expense => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return expense.description.toLowerCase().includes(query) || 
+           (expense.category && expense.category.toLowerCase().includes(query));
+  });
+  
+  const total = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  
+  // Budget warning logic
+  const isBudgetExceeded = monthlyBudget > 0 && total > monthlyBudget;
   
   // Group by category for visualization
-  const categoryTotals = expenses.reduce((acc, e) => {
+  const categoryTotals = filteredExpenses.reduce((acc, e) => {
     acc[e.category || 'אחר'] = (acc[e.category || 'אחר'] || 0) + e.amount;
     return acc;
   }, {} as Record<string, number>);
@@ -300,12 +393,70 @@ export default function App() {
             })}
           </div>
 
+          {/* Search and Budget Controls */}
+          <div className="mb-6 flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="חיפוש לפי תיאור או קטגוריה..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pr-10 pl-4 py-2 rounded-lg border-2 border-slate-200 text-right focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowBudgetInput(!showBudgetInput)}
+                className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg font-medium transition-colors whitespace-nowrap"
+              >
+                {monthlyBudget > 0 ? `תקציב: ₪${monthlyBudget}` : 'הגדר תקציב'}
+              </button>
+            </div>
+          </div>
+
+          {/* Budget Input */}
+          {showBudgetInput && (
+            <div className="mb-6 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+              <div className="flex gap-3 items-center">
+                <input
+                  type="number"
+                  placeholder="סכום תקציב חודשי"
+                  value={monthlyBudget || ''}
+                  onChange={(e) => setMonthlyBudget(parseFloat(e.target.value) || 0)}
+                  className="flex-1 px-3 py-2 rounded-lg border-2 border-slate-200 text-right"
+                />
+                <button
+                  onClick={() => setShowBudgetInput(false)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium"
+                >
+                  שמור
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Summary with Visual Bar */}
           <div className="mb-6 space-y-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <div className="text-sm text-gray-600">סך הוצאות</div>
-              <div className="text-3xl font-bold text-blue-600">
-                ₪{total.toFixed(2)}
+            <div className={`p-4 rounded-lg ${isBudgetExceeded ? 'bg-red-50 border-2 border-red-300' : 'bg-blue-50'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-600">סך הוצאות</div>
+                  <div className={`text-3xl font-bold ${isBudgetExceeded ? 'text-red-600' : 'text-blue-600'}`}>
+                    ₪{total.toFixed(2)}
+                  </div>
+                  {monthlyBudget > 0 && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      מתוך תקציב: ₪{monthlyBudget.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+                {isBudgetExceeded && (
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-6 h-6" />
+                    <span className="text-sm font-semibold">חריגה מהתקציב!</span>
+                  </div>
+                )}
               </div>
             </div>
             
@@ -428,7 +579,14 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {expenses.map((expense) => (
+                {filteredExpenses.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                      {searchQuery ? 'לא נמצאו תוצאות לחיפוש' : 'אין הוצאות להצגה'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredExpenses.map((expense) => (
                   <tr
                     key={expense.id}
                     className="border-t-2 border-slate-100 hover:bg-slate-50 transition-colors"
@@ -517,13 +675,75 @@ export default function App() {
                       )}
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
             </div>
           </div>
+
+          {/* Pagination Controls */}
+          {paginationData && paginationData.totalPages > 1 && !searchQuery && (
+            <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-lg">
+              <div className="text-sm text-gray-600">
+                מציג {((paginationData.page - 1) * paginationData.limit) + 1} - {Math.min(paginationData.page * paginationData.limit, paginationData.totalCount)} מתוך {paginationData.totalCount} הוצאות
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 rounded-lg bg-white border-2 border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                  <span className="text-sm font-medium">הקודם</span>
+                </button>
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(5, paginationData.totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (paginationData.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= paginationData.totalPages - 2) {
+                      pageNum = paginationData.totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded-lg font-medium text-sm transition-colors ${
+                          currentPage === pageNum
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border-2 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(paginationData.totalPages, prev + 1))}
+                  disabled={currentPage === paginationData.totalPages}
+                  className="px-3 py-1.5 rounded-lg bg-white border-2 border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                >
+                  <span className="text-sm font-medium">הבא</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Search Results Info */}
+          {searchQuery && filteredExpenses.length > 0 && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+              נמצאו {filteredExpenses.length} תוצאות לחיפוש "{searchQuery}"
+            </div>
+          )}
         </div>
       </div>
+      <Toaster position="top-center" richColors />
     </div>
   );
 }
