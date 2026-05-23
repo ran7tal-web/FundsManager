@@ -961,7 +961,6 @@ export default function App() {
                         dir="ltr"
                         autoFocus
                       />
-                      <p className="text-xs text-slate-500 mt-2 text-center">סיסמה ראשונית: Admin2026@</p>
                     </div>
                     <div className="flex gap-3">
                       <button
