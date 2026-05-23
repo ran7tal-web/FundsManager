@@ -8,8 +8,13 @@ A clean, Excel-like expense tracking application integrated with the Agalgala ec
 - **Multi-view Support**: View expenses by day, week, month, quarter, or year
 - **Real-time Sync**: Socket.io notifications when other users make changes
 - **SQLite Database**: Persistent data storage with mounted volume
-- **Dark Mode**: Toggle between light and dark themes
-- **Responsive**: Desktop-first design (mobile view coming soon)
+- **Search & Filter**: Real-time search by description or category
+- **Pagination**: Server-side pagination for optimal performance (50 items per page)
+- **Undo Delete**: 5-second grace period to undo accidental deletions
+- **Budget Tracking**: Set monthly budgets with visual warnings on overspending
+- **CSV Export**: Export expenses for accountant with Hebrew support
+- **Input Validation**: Robust server-side validation prevents data corruption
+- **Responsive**: Fully mobile-friendly with touch-optimized scrolling
 
 ## Tech Stack
 
@@ -48,10 +53,14 @@ Access at `https://your-domain/finance/`
 
 ## API Endpoints
 
-- `GET /api/expenses?start=YYYY-MM-DD&end=YYYY-MM-DD` - Get expenses
-- `POST /api/expenses` - Add expense
-- `PUT /api/expenses/:id` - Update expense
+- `GET /api/expenses?start=YYYY-MM-DD&end=YYYY-MM-DD&page=1&limit=50` - Get paginated expenses
+  - Returns: `{ data: Expense[], totalCount: number, page: number, totalPages: number, limit: number }`
+- `POST /api/expenses` - Add expense (with validation)
+  - Validates: date format, positive amount, non-empty description
+- `PUT /api/expenses/:id` - Update expense (with validation)
+  - Returns 404 if expense not found
 - `DELETE /api/expenses/:id` - Delete expense
+  - Returns: `{ success: true, deleted: Expense }`
 - `GET /api/summary?start=YYYY-MM-DD&end=YYYY-MM-DD` - Get summary by category
 
 ## Database Schema

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Plus, Trash2, TrendingUp, ChevronDown, Download, Search, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, ChevronDown, Download, Search, ChevronLeft, ChevronRight, AlertTriangle, Lock, Unlock, Settings, ShieldCheck } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 
 interface Expense {
@@ -22,6 +22,24 @@ interface PaginationData {
 }
 
 export default function App() {
+  // PIN Authentication state
+  const [isAppUnlocked, setIsAppUnlocked] = useState<boolean>(() => {
+    const savedSession = sessionStorage.getItem('finance_unlocked');
+    return savedSession ? (Date.now() - parseInt(savedSession, 10) < 86400000) : false;
+  });
+  const [appPinCode, setAppPinCode] = useState("");
+  
+  // Admin Settings state
+  const [showAdminDialog, setShowAdminDialog] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminTab, setAdminTab] = useState<'pin' | 'password'>('pin');
+  const [newAppPin, setNewAppPin] = useState("");
+  const [confirmNewAppPin, setConfirmNewAppPin] = useState("");
+  const [currentAdminPassword, setCurrentAdminPassword] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [confirmNewAdminPassword, setConfirmNewAdminPassword] = useState("");
+  
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('today');
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -287,6 +305,134 @@ export default function App() {
     }, 5000);
   };
 
+  const handleAppUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("./api/app/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: appPinCode })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsAppUnlocked(true);
+        sessionStorage.setItem('finance_unlocked', Date.now().toString());
+        setAppPinCode("");
+        toast.success("ברוכים הבאים!");
+      } else {
+        toast.error("קוד שגוי");
+        setAppPinCode("");
+      }
+    } catch (err) {
+      toast.error("שגיאה בחיבור לשרת");
+    }
+  };
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('./api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        setIsAdminAuthenticated(true);
+        toast.success('התחברת כמנהל');
+      } else {
+        toast.error('סיסמה שגויה');
+        setAdminPassword('');
+      }
+    } catch (error) {
+      toast.error('שגיאה בחיבור לשרת');
+    }
+  };
+
+  const handleChangeAppPin = async () => {
+    if (newAppPin !== confirmNewAppPin) {
+      toast.error('הקודים אינם תואמים');
+      return;
+    }
+    
+    if (newAppPin.length < 4) {
+      toast.error('הקוד חייב להכיל לפחות 4 תווים');
+      return;
+    }
+    
+    try {
+      const res = await fetch('./api/admin/change-app-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminPassword, newAppPin })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success('קוד הכניסה שונה בהצלחה');
+        setNewAppPin('');
+        setConfirmNewAppPin('');
+      } else {
+        toast.error(data.message || 'שגיאה בשינוי הקוד');
+      }
+    } catch (error) {
+      toast.error('שגיאה בחיבור לשרת');
+    }
+  };
+
+  const handleChangeAdminPassword = async () => {
+    if (newAdminPassword !== confirmNewAdminPassword) {
+      toast.error('הסיסמאות אינן תואמות');
+      return;
+    }
+    
+    if (newAdminPassword.length < 6) {
+      toast.error('הסיסמה חייבת להכיל לפחות 6 תווים');
+      return;
+    }
+    
+    try {
+      const res = await fetch('./api/admin/change-admin-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: currentAdminPassword, newPassword: newAdminPassword })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success('סיסמת המנהל שונתה בהצלחה');
+        setCurrentAdminPassword('');
+        setNewAdminPassword('');
+        setConfirmNewAdminPassword('');
+        // Update stored admin password
+        setAdminPassword(newAdminPassword);
+      } else {
+        toast.error(data.message || 'שגיאה בשינוי הסיסמה');
+      }
+    } catch (error) {
+      toast.error('שגיאה בחיבור לשרת');
+    }
+  };
+
+  const closeAdminDialog = () => {
+    setShowAdminDialog(false);
+    setIsAdminAuthenticated(false);
+    setAdminPassword('');
+    setNewAppPin('');
+    setConfirmNewAppPin('');
+    setCurrentAdminPassword('');
+    setNewAdminPassword('');
+    setConfirmNewAdminPassword('');
+    setAdminTab('pin');
+  };
+
+  const handleLogout = () => {
+    setIsAppUnlocked(false);
+    sessionStorage.removeItem('finance_unlocked');
+    toast.info('התנתקת מהמערכת');
+  };
+
   const exportToCSV = () => {
     if (expenses.length === 0) {
       toast.error('אין הוצאות לייצוא');
@@ -352,6 +498,41 @@ export default function App() {
   // Get unique categories for dropdown
   const uniqueCategories = Array.from(new Set(expenses.map(e => e.category).filter(Boolean)));
 
+  // PIN Lock Screen
+  if (!isAppUnlocked) {
+    return (
+      <div dir="rtl" className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 flex items-center justify-center p-4">
+        <form onSubmit={handleAppUnlock} className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-6 text-center max-w-sm w-full border-2 border-slate-200">
+          <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center shadow-lg">
+            <Lock className="w-10 h-10 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-black text-slate-800 mb-2">ניהול כספים</h1>
+            <p className="text-sm text-slate-600 font-semibold">הזן קוד כניסה</p>
+          </div>
+          <input
+            type="password"
+            inputMode="numeric"
+            value={appPinCode}
+            onChange={(e) => setAppPinCode(e.target.value)}
+            className="w-full text-center text-4xl h-16 font-black rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:outline-none shadow-inner"
+            placeholder="••••"
+            maxLength={6}
+            dir="ltr"
+            autoFocus
+          />
+          <button
+            type="submit"
+            className="w-full h-14 rounded-2xl text-lg font-black bg-blue-600 hover:bg-blue-700 text-white shadow-lg transition-all active:scale-95"
+          >
+            כניסה
+          </button>
+        </form>
+        <Toaster position="top-center" richColors />
+      </div>
+    );
+  }
+
   return (
     <div dir="rtl">
       <div className="min-h-screen overflow-auto bg-white text-gray-900">
@@ -363,14 +544,30 @@ export default function App() {
               <TrendingUp className="w-8 h-8 text-blue-500" />
               <h1 className="text-2xl sm:text-3xl font-bold">ניהול כספים</h1>
             </div>
-            <button
-              onClick={exportToCSV}
-              disabled={expenses.length === 0}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg font-bold flex items-center gap-2 transition-colors shadow-md active:scale-95"
-            >
-              <Download className="w-4 h-4" />
-              ייצוא לרואה חשבון (CSV)
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setShowAdminDialog(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold flex items-center gap-2 transition-colors shadow-md active:scale-95"
+              >
+                <Settings className="w-4 h-4" />
+                הגדרות
+              </button>
+              <button
+                onClick={exportToCSV}
+                disabled={expenses.length === 0}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg font-bold flex items-center gap-2 transition-colors shadow-md active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                ייצוא CSV
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold flex items-center gap-2 transition-colors shadow-md active:scale-95"
+              >
+                <Unlock className="w-4 h-4" />
+                יציאה
+              </button>
+            </div>
           </div>
 
           {/* View Mode Selector */}
@@ -739,6 +936,152 @@ export default function App() {
           {searchQuery && filteredExpenses.length > 0 && (
             <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
               נמצאו {filteredExpenses.length} תוצאות לחיפוש "{searchQuery}"
+            </div>
+          )}
+
+          {/* Admin Settings Dialog */}
+          {showAdminDialog && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={closeAdminDialog}>
+              <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                {!isAdminAuthenticated ? (
+                  <form onSubmit={handleAdminLogin} className="space-y-6">
+                    <div className="flex items-center justify-center mb-4">
+                      <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center">
+                        <ShieldCheck className="w-8 h-8 text-white" />
+                      </div>
+                    </div>
+                    <h2 className="text-2xl font-black text-center">הזדהות מנהל</h2>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">סיסמת מנהל</label>
+                      <input
+                        type="password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-500 focus:outline-none text-center font-mono"
+                        dir="ltr"
+                        autoFocus
+                      />
+                      <p className="text-xs text-slate-500 mt-2 text-center">סיסמה ראשונית: Admin2026@</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="submit"
+                        className="flex-1 h-12 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black transition-colors"
+                      >
+                        כניסה
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeAdminDialog}
+                        className="flex-1 h-12 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-black transition-colors"
+                      >
+                        ביטול
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-6">
+                    <h2 className="text-2xl font-black text-center">הגדרות מערכת</h2>
+                    
+                    {/* Tabs */}
+                    <div className="flex gap-2 border-b-2 border-slate-200">
+                      <button
+                        onClick={() => setAdminTab('pin')}
+                        className={`flex-1 py-3 font-bold transition-colors ${adminTab === 'pin' ? 'border-b-4 border-purple-600 text-purple-600' : 'text-slate-500'}`}
+                      >
+                        קוד כניסה
+                      </button>
+                      <button
+                        onClick={() => setAdminTab('password')}
+                        className={`flex-1 py-3 font-bold transition-colors ${adminTab === 'password' ? 'border-b-4 border-purple-600 text-purple-600' : 'text-slate-500'}`}
+                      >
+                        סיסמת מנהל
+                      </button>
+                    </div>
+
+                    {adminTab === 'pin' ? (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-bold mb-2">קוד כניסה חדש</label>
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            value={newAppPin}
+                            onChange={(e) => setNewAppPin(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-500 focus:outline-none text-center font-mono text-xl"
+                            dir="ltr"
+                            placeholder="••••"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold mb-2">אימות קוד</label>
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            value={confirmNewAppPin}
+                            onChange={(e) => setConfirmNewAppPin(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-500 focus:outline-none text-center font-mono text-xl"
+                            dir="ltr"
+                            placeholder="••••"
+                          />
+                        </div>
+                        <button
+                          onClick={handleChangeAppPin}
+                          className="w-full h-12 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black transition-colors"
+                        >
+                          שמור קוד חדש
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-bold mb-2">סיסמה נוכחית</label>
+                          <input
+                            type="password"
+                            value={currentAdminPassword}
+                            onChange={(e) => setCurrentAdminPassword(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-500 focus:outline-none text-center font-mono"
+                            dir="ltr"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold mb-2">סיסמה חדשה</label>
+                          <input
+                            type="password"
+                            value={newAdminPassword}
+                            onChange={(e) => setNewAdminPassword(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-500 focus:outline-none text-center font-mono"
+                            dir="ltr"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold mb-2">אימות סיסמה</label>
+                          <input
+                            type="password"
+                            value={confirmNewAdminPassword}
+                            onChange={(e) => setConfirmNewAdminPassword(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-500 focus:outline-none text-center font-mono"
+                            dir="ltr"
+                          />
+                        </div>
+                        <button
+                          onClick={handleChangeAdminPassword}
+                          className="w-full h-12 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black transition-colors"
+                        >
+                          שמור סיסמה חדשה
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={closeAdminDialog}
+                      className="w-full h-12 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-black transition-colors"
+                    >
+                      סגור
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

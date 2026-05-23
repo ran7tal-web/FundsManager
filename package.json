@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "build": "vite build && npx esbuild server/index.ts --platform=node --packages=external --format=esm --outfile=dist/server.js",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "reset-pin": "tsx reset-pin.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

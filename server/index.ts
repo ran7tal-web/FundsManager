@@ -4,6 +4,8 @@ import { Server } from 'socket.io';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,8 +14,83 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, { path: '/finance/socket.io' });
 
-const DB_PATH = path.join(__dirname, '../data/expenses.db');
+// Setup Data Directory
+const DATA_DIR = path.join(__dirname, '../data');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+const DB_PATH = path.join(DATA_DIR, 'expenses.db');
 console.log('Database path:', DB_PATH);
+
+// Setup Auth binary files
+const AUTH_BIN_PATH = path.join(DATA_DIR, 'finance_auth.bin');
+const ADMIN_AUTH_BIN_PATH = path.join(DATA_DIR, 'finance_admin_auth.bin');
+
+// Use environment variable for encryption
+const rawKey = process.env.ENCRYPTION_KEY || '12345678901234567890123456789012';
+const ENCRYPTION_KEY = Buffer.alloc(32);
+const keyBuffer = Buffer.from(rawKey, 'utf8');
+keyBuffer.copy(ENCRYPTION_KEY);
+
+const IV_LENGTH = 16;
+
+function encryptPassword(text: string): Buffer {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  return Buffer.concat([iv, encrypted]);
+}
+
+function decryptPassword(buffer: Buffer): string {
+  try {
+    const iv = buffer.subarray(0, IV_LENGTH);
+    const encryptedText = buffer.subarray(IV_LENGTH);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+    const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+    return decrypted.toString('utf8');
+  } catch (e) {
+    return "";
+  }
+}
+
+function getAdminPassword(): string {
+  if (fs.existsSync(ADMIN_AUTH_BIN_PATH)) {
+    const encryptedBuffer = fs.readFileSync(ADMIN_AUTH_BIN_PATH);
+    return decryptPassword(encryptedBuffer);
+  }
+  return "Admin2026@";
+}
+
+// Create auth files if they don't exist
+const DEFAULT_PIN = process.env.DEFAULT_FINANCE_PIN || "2411";
+const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || "Admin2026@";
+
+if (!fs.existsSync(AUTH_BIN_PATH)) {
+  fs.writeFileSync(AUTH_BIN_PATH, encryptPassword(DEFAULT_PIN));
+  console.log('[AUTH] Created finance PIN file with default PIN:', DEFAULT_PIN);
+  console.warn('[SECURITY] ⚠️  CHANGE DEFAULT PIN IMMEDIATELY');
+} else {
+  const stats = fs.statSync(AUTH_BIN_PATH);
+  if (stats.isDirectory()) {
+    console.error('[AUTH] ERROR: finance_auth.bin is a directory! Removing and recreating...');
+    fs.rmdirSync(AUTH_BIN_PATH, { recursive: true });
+    fs.writeFileSync(AUTH_BIN_PATH, encryptPassword(DEFAULT_PIN));
+  }
+}
+
+if (!fs.existsSync(ADMIN_AUTH_BIN_PATH)) {
+  fs.writeFileSync(ADMIN_AUTH_BIN_PATH, encryptPassword(DEFAULT_ADMIN_PASSWORD));
+  console.log('[AUTH] Created admin password file with default password');
+  console.warn('[SECURITY] ⚠️  CHANGE DEFAULT ADMIN PASSWORD IMMEDIATELY');
+} else {
+  const stats = fs.statSync(ADMIN_AUTH_BIN_PATH);
+  if (stats.isDirectory()) {
+    console.error('[AUTH] ERROR: finance_admin_auth.bin is a directory! Removing and recreating...');
+    fs.rmdirSync(ADMIN_AUTH_BIN_PATH, { recursive: true });
+    fs.writeFileSync(ADMIN_AUTH_BIN_PATH, encryptPassword(DEFAULT_ADMIN_PASSWORD));
+  }
+}
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
@@ -294,6 +371,80 @@ app.get('/api/summary', (req, res) => {
   } catch (error: any) {
     console.error('Unexpected error in GET /api/summary:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- AUTH API ---
+app.post("/api/app/login", (req, res) => {
+  try {
+    const { password } = req.body;
+    if (fs.existsSync(AUTH_BIN_PATH)) {
+      const encryptedBuffer = fs.readFileSync(AUTH_BIN_PATH);
+      const currentPassword = decryptPassword(encryptedBuffer);
+      if (password === currentPassword) {
+        return res.json({ success: true });
+      }
+    }
+    res.status(401).json({ success: false, message: "Invalid PIN" });
+  } catch (error: any) {
+    console.error('Error in PIN verification:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+app.post("/api/admin/login", (req, res) => {
+  try {
+    const { password } = req.body;
+    if (password === getAdminPassword()) {
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ success: false, message: "Invalid admin password" });
+    }
+  } catch (error: any) {
+    console.error('Error in admin verification:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+app.post("/api/admin/change-app-pin", (req, res) => {
+  try {
+    const { adminPassword, newAppPin } = req.body;
+    
+    if (adminPassword !== getAdminPassword()) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    
+    if (!newAppPin || newAppPin.length < 4) {
+      return res.status(400).json({ success: false, message: "PIN must be at least 4 characters" });
+    }
+    
+    fs.writeFileSync(AUTH_BIN_PATH, encryptPassword(newAppPin));
+    console.log('[AUTH] App PIN changed by admin');
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error changing app PIN:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+app.post("/api/admin/change-admin-password", (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    if (currentPassword !== getAdminPassword()) {
+      return res.status(401).json({ success: false, message: "Current password incorrect" });
+    }
+    
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: "New password must be at least 6 characters" });
+    }
+    
+    fs.writeFileSync(ADMIN_AUTH_BIN_PATH, encryptPassword(newPassword));
+    console.log('[AUTH] Admin password changed successfully');
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error changing admin password:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
